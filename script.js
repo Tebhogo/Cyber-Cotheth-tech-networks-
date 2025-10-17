@@ -505,6 +505,9 @@ function initializeContactForm() {
             // Sanitize input
             const sanitizedData = sanitizeInput(data);
             
+            // Debug: Log form data
+            console.log('Form data being validated:', sanitizedData);
+            
             // Enhanced validation
             if (validateForm(sanitizedData)) {
                 // Rate limiting check
@@ -519,9 +522,53 @@ function initializeContactForm() {
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
                 submitBtn.disabled = true;
                 
-                // Client-side form handling (no server required)
-                setTimeout(() => {
-                    // Simulate form processing
+                // Try to send email via PHP script
+                fetch('send_email.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(sanitizedData)
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        // Email sent successfully
+                        showNotification(result.message, 'success');
+                        
+                        // Reset form
+                        contactForm.reset();
+                        
+                        // Generate new CSRF token
+                        const newCsrfToken = generateCSRFToken();
+                        if (csrfInput) {
+                            csrfInput.value = newCsrfToken;
+                        }
+                    } else {
+                        // Email sending failed, fallback to manual method
+                        showNotification('Email service unavailable. Please use the manual method below.', 'warning');
+                        
+                        const emailData = {
+                            name: sanitizedData.name,
+                            email: sanitizedData.email,
+                            phone: sanitizedData.phone || 'Not provided',
+                            service: sanitizedData.service,
+                            message: sanitizedData.message,
+                            timestamp: new Date().toLocaleString(),
+                            ip: 'Client-side submission'
+                        };
+                        
+                        // Create email content for manual sending
+                        const emailContent = createEmailContent(emailData);
+                        showEmailContent(emailData);
+                    }
+                })
+                .catch(error => {
+                    console.error('Email sending error:', error);
+                    
+                    // Fallback to manual method
+                    showNotification('Email service unavailable. Please use the manual method below.', 'warning');
+                    
                     const emailData = {
                         name: sanitizedData.name,
                         email: sanitizedData.email,
@@ -532,28 +579,15 @@ function initializeContactForm() {
                         ip: 'Client-side submission'
                     };
                     
-                    // Create email content
+                    // Create email content for manual sending
                     const emailContent = createEmailContent(emailData);
-                    
-                    // Show success message with email content
-                    showNotification('Form submitted successfully! Please copy the email content below and send it to us.', 'success');
-                    
-                    // Display email content for copying
                     showEmailContent(emailData);
-                    
-                    // Reset form
-                    contactForm.reset();
-                    
-                    // Generate new CSRF token
-                    const newCsrfToken = generateCSRFToken();
-                    if (csrfInput) {
-                        csrfInput.value = newCsrfToken;
-                    }
-                    
+                })
+                .finally(() => {
                     // Restore button state
                     submitBtn.innerHTML = originalText;
                     submitBtn.disabled = false;
-                }, 1500); // Simulate processing time
+                });
                 
                 // Log security event
                 logSecurityEvent('form_submission', sanitizedData.email);
@@ -566,16 +600,25 @@ function initializeContactForm() {
 
 // Enhanced form validation with security
 function validateForm(data) {
+    console.log('Validating form data:', data);
     const requiredFields = ['name', 'email', 'message', 'service'];
     
-    // Check required fields
-    if (!requiredFields.every(field => data[field] && data[field].trim() !== '')) {
-        return false;
+    // Check required fields with specific error messages
+    for (const field of requiredFields) {
+        console.log(`Checking field ${field}:`, data[field]);
+        if (!data[field] || data[field].trim() === '') {
+            const fieldName = field.charAt(0).toUpperCase() + field.slice(1);
+            console.log(`Field ${field} is empty or invalid`);
+            showNotification(`${fieldName} is required`, 'error');
+            return false;
+        }
     }
     
     // Email validation with regex
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    console.log('Email validation:', data.email, emailRegex.test(data.email));
     if (!emailRegex.test(data.email)) {
+        console.log('Email validation failed');
         showNotification('Please enter a valid email address', 'error');
         return false;
     }
@@ -587,8 +630,10 @@ function validateForm(data) {
     }
     
     // Message validation
-    if (data.message.length < 10) {
-        showNotification('Message must be at least 10 characters long', 'error');
+    console.log('Message validation:', data.message, 'Length:', data.message.length);
+    if (data.message.length < 3) {
+        console.log('Message validation failed - too short');
+        showNotification('Message must be at least 3 characters long', 'error');
         return false;
     }
     
@@ -611,6 +656,7 @@ function validateForm(data) {
         }
     }
     
+    console.log('Form validation passed successfully');
     return true;
 }
 
@@ -716,6 +762,8 @@ IP: ${data.ip}
 ---
 This message was sent from the CCTN Cloud Development Suite contact form.
 Website: https://cybercothtechnetwotks.co.zw
+
+Please send this email to: liyandahhella12@gmail.com
     `.trim();
 }
 
@@ -734,7 +782,7 @@ function showEmailContent(data) {
     emailDisplay.innerHTML = `
         <div style="background: rgba(255, 112, 51, 0.1); padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid rgba(255, 112, 51, 0.3);">
             <h4 style="color: var(--cctn-orange); margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                <i class="fas fa-envelope"></i> Email Content to Send
+                <i class="fas fa-envelope"></i> Email Content to Send to: liyandahhella12@gmail.com
             </h4>
             <div style="background: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 15px;">
                 <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.4; margin: 0;">${emailContent}</pre>
@@ -743,7 +791,7 @@ function showEmailContent(data) {
                 <button onclick="copyEmailContent()" style="background: var(--cctn-orange); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 14px;">
                     <i class="fas fa-copy"></i> Copy Email Content
                 </button>
-                <a href="mailto:info@cybercothtechnetwotks.co.zw?subject=New Contact Form Submission&body=${encodeURIComponent(emailContent)}" 
+                <a href="mailto:liyandahhella12@gmail.com?subject=New Contact Form Submission&body=${encodeURIComponent(emailContent)}" 
                    style="background: #25D366; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-size: 14px;">
                     <i class="fas fa-paper-plane"></i> Open Email Client
                 </a>
@@ -754,7 +802,7 @@ function showEmailContent(data) {
                 </a>
             </div>
             <p style="margin-top: 15px; font-size: 12px; color: #666;">
-                <i class="fas fa-info-circle"></i> Copy the email content above and send it to info@cybercothtechnetwotks.co.zw
+                <i class="fas fa-info-circle"></i> Copy the email content above and send it to liyandahhella12@gmail.com
             </p>
         </div>
     `;
